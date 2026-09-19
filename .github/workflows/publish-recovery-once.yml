@@ -1,0 +1,70 @@
+name: Publish accepted recovery release
+on:
+  push:
+    branches: [ops/publish-recovery-20260919]
+    paths: [.github/workflows/publish-recovery-once.yml]
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: m1nga/skills
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate pinned authorized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 2575e0c182c0a424177409e942696527ad6dd905
+          git branch --set-upstream-to=origin/main main
+          mkdir -p /tmp/published-recovery-evidence
+          scripts/verify-products 2>&1 | tee /tmp/published-recovery-evidence/source-gates.log
+          gh auth setup-git
+      - name: Run the existing publisher and direct discovery contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/publish-skill taskdock 2>&1 | tee /tmp/published-recovery-evidence/publication.log
+      - name: Verify the actual standalone clone
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh repo clone m1nga/taskdock /tmp/published-taskdock -- --quiet --depth=1
+          git -C /tmp/published-taskdock rev-parse HEAD > /tmp/published-recovery-evidence/published-commit.txt
+          cp /tmp/published-taskdock/SOURCE.json /tmp/published-recovery-evidence/SOURCE.json
+          test -f /tmp/published-taskdock/evals/README.md
+          test -f /tmp/published-taskdock/evals/continuity/README.md
+          test -f /tmp/published-taskdock/skills/taskdock/scripts/recovery.py
+          python3 -m unittest discover -s /tmp/published-taskdock/skills/taskdock/scripts -p 'test_*.py' -v 2>&1 | tee /tmp/published-recovery-evidence/standalone-tests.log
+          git -C /tmp/published-taskdock archive HEAD > /tmp/published-recovery-evidence/published-source.tar
+      - name: Verify Claude Code plugin installation without a model session
+        shell: bash
+        run: |
+          set -euo pipefail
+          export DISABLE_TELEMETRY=1 DO_NOT_TRACK=1
+          npx -y @anthropic-ai/claude-code --version | tee /tmp/published-recovery-evidence/claude-version.txt
+          npx -y @anthropic-ai/claude-code plugin marketplace add m1nga/taskdock 2>&1 | tee /tmp/published-recovery-evidence/plugin-marketplace.log
+          npx -y @anthropic-ai/claude-code plugin install taskdock@taskdock 2>&1 | tee /tmp/published-recovery-evidence/plugin-install.log
+          npx -y @anthropic-ai/claude-code plugin list --json > /tmp/published-recovery-evidence/plugin-list.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          obj = json.loads(Path('/tmp/published-recovery-evidence/plugin-list.json').read_text())
+          assert 'taskdock' in json.dumps(obj) and '2026.9.20' in json.dumps(obj), obj
+          print('Actual plugin install lists taskdock version 2026.9.20. No model session or user credential used.')
+          PY
+          npx -y @anthropic-ai/claude-code plugin uninstall taskdock@taskdock
+          npx -y @anthropic-ai/claude-code plugin marketplace remove taskdock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: published-recovery-evidence
+          path: /tmp/published-recovery-evidence/
+          retention-days: 7
