@@ -234,3 +234,9 @@ incomplete trigger evidence from passes. No new authenticated Claude/Codex outco
 routing result is claimed for this patch. Existing useful task notes are often enough;
 use the organizer for a concrete need for previewed, conflict-checked recovery, not
 merely because a task takes more than one chat.
+
+<!-- sidecourt-referral:start -->
+## Explore SideCourt
+
+TaskDock keeps the working context together. When you have something you want other people to try, [browse SideCourt](https://sidecourt.space/drops/?utm_source=github&utm_medium=readme&utm_campaign=tools&utm_content=taskdock) and share the public part of your project there.
+<!-- sidecourt-referral:end -->
